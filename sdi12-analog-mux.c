@@ -70,19 +70,76 @@ int main()
     // Check ADC communication
     bool comms_ok = adc_verify_communication();
 
-    while (true) {
-        if (comms_ok) {
-            // Fast blink for good communication
-            pico_set_led(true);
-            sleep_ms(100);
-            pico_set_led(false);
-            sleep_ms(100);
-        } else {
+    if (!comms_ok) {
+
+        while (true) {
             // Slow blink for bad communication
+            printf("AD7124 communication failed!\n");
             pico_set_led(true);
             sleep_ms(1000);
             pico_set_led(false);
             sleep_ms(1000);
         }
+    }
+
+    printf("AD7124 communication OK\n");
+
+    // Configure RTD measurement (PT100, 4-wire ratiometric configuration as shown in the image)
+    rtd_config_t rtd_config = {
+        .r_ref = 2960.0f,           // 4.99kΩ reference resistor (RREF1)
+        .r_rtd_0 = 100.0f,          // PT100 RTD (100Ω at 0°C) - using potentiometer for test
+        .alpha = 0.00385f,          // PT100 temperature coefficient
+        .excitation_current = AD7124_IOUT_250UA,  // 250µA excitation current (more stable)
+        .rtd_ainp = AD7124_AIN2,    // RTD positive connection (AIN2)
+        .rtd_ainm = AD7124_AIN3,    // RTD negative connection (AIN3)
+        .ref_ainp = AD7124_AIN0,    // Reference positive (across RREF1)
+        .ref_ainm = AD7124_AIN1,    // Reference negative (across RREF1)
+        .iout_pin = AD7124_AIN0     // Excitation current output on AIN0
+    };
+
+    printf("Configuring RTD measurement system...\n");
+    bool rtd_config_ok = adc_configure_rtd(&rtd_config);
+
+    if (!rtd_config_ok) {
+        printf("RTD configuration failed!\n");
+        while (true) {
+            pico_set_led(true);
+            sleep_ms(200);
+            pico_set_led(false);
+            sleep_ms(200);
+        }
+    }
+
+    printf("RTD configuration complete. Starting measurements...\n");
+
+    // Main measurement loop
+    uint32_t measurement_count = 0;
+    while (true) {
+        measurement_count++;
+        printf("\n--- Measurement Attempt #%d ---\n", measurement_count);
+
+        uint32_t rtd_data;
+        uint8_t channel;
+
+        // Try to read RTD data
+        if (adc_read_rtd_data(&rtd_data, &channel)) {
+            // Calculate temperature
+            float temperature = adc_calculate_temperature(rtd_data, &rtd_config);
+
+            printf("=== RTD Measurement SUCCESS ===\n");
+            printf("Channel: %d\n", channel);
+            printf("Raw ADC: 0x%06X (%d)\n", rtd_data, rtd_data);
+            printf("Temperature: %.2f°C\n", temperature);
+            printf("===============================\n");
+
+            // Indicate successful measurement with LED
+            pico_set_led(true);
+            sleep_ms(50);
+            pico_set_led(false);
+        } else {
+            printf("No data ready this cycle\n");
+        }
+
+        // No delay - check for new data as fast as possible
     }
 }
