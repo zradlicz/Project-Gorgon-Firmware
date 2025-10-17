@@ -35,7 +35,10 @@ pico_sdk_init()
 
 # Add executable. Default name is the project name, version 0.1
 
-add_executable(sdi12-analog-mux sdi12-analog-mux.c ad1724.c)
+add_executable(sdi12-analog-mux sdi12-analog-mux.c ad1724.c sdi12.c)
+
+# Generate PIO header from .pio file
+pico_generate_pio_header(sdi12-analog-mux ${CMAKE_CURRENT_LIST_DIR}/sdi12_uart.pio)
 
 pico_set_program_name(sdi12-analog-mux "sdi12-analog-mux")
 pico_set_program_version(sdi12-analog-mux "0.1")
@@ -54,8 +57,9 @@ target_include_directories(sdi12-analog-mux PRIVATE
 )
 
 # Add any user requested libraries
-target_link_libraries(sdi12-analog-mux 
+target_link_libraries(sdi12-analog-mux
         hardware_spi
+        hardware_pio
         )
 
 pico_add_extra_outputs(sdi12-analog-mux)
