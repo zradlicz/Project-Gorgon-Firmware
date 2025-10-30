@@ -27,7 +27,7 @@
 #define AD7124_GAIN0_REG        0x31
 #define AD7124_GAIN1_REG        0x32
 
-#define AD7124_ID_VALUE         0x14
+#define AD7124_ID_VALUE         0x17
 
 // ADC Control Register bits
 #define AD7124_ADC_CTRL_DOUT_RDY_DEL    (1 << 12)
@@ -61,6 +61,11 @@
 #define AD7124_AIN1     0x01
 #define AD7124_AIN2     0x02
 #define AD7124_AIN3     0x03
+#define AD7124_AIN4     0x04
+#define AD7124_AIN5     0x05
+#define AD7124_AIN6     0x06
+#define AD7124_AIN7     0x07
+#define AD7124_AIN8     0x08
 #define AD7124_AVSS     0x11
 
 // Configuration register bits
@@ -136,7 +141,10 @@ void adc_reg_read(uint8_t reg_addr, uint8_t *data, size_t data_len);
 void adc_reset(void);
 bool adc_verify_communication(void);
 bool adc_configure_rtd(const rtd_config_t *config);
+void adc_enable_single_channel(uint8_t channel);
+void adc_start_single_conversion(void);
 bool adc_read_rtd_data(uint32_t *rtd_data, uint8_t *channel);
 float adc_calculate_temperature(uint32_t rtd_data, const rtd_config_t *config);
+float adc_calculate_resistance(uint32_t rtd_data, const rtd_config_t *config);
 
 #endif // AD7124_H

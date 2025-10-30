@@ -69,24 +69,48 @@ bool adc_configure_rtd(const rtd_config_t *config) {
     adc_reg_write(AD7124_IOC_REG1, ioc1_data, 3);
     printf("IO_CONTROL_1 register written: 0x%06X\n", ioc1_val);
 
-    // Step 2: Disable all other channels first (Channel 1-15)
-    printf("Disabling channels 1-15...\n");
+    // Step 2: Disable channels 3-15
+    printf("Disabling channels 3-15...\n");
     uint8_t ch_disable[2] = {0x00, 0x01}; // Disabled, but keep default AINP/AINM
-    for (int ch = 1; ch <= 15; ch++) {
+    for (int ch = 3; ch <= 15; ch++) {
         adc_reg_write(AD7124_CH0_MAP_REG + ch, ch_disable, 2);
     }
 
-    // Step 3: Configure Channel 0 for RTD measurement (AIN2/AIN3)
-    printf("Configuring Channel 0: RTD on AIN%d(+)/AIN%d(-)\n", config->rtd_ainp, config->rtd_ainm);
+    // Step 3: Configure Channels 0-2 for RTD measurements (RTDs 1-3)
+    // Initially, only enable channel 0. We'll dynamically enable channels later.
+    // Channel 0: RTD 1 (AIN1/AIN2) - ENABLED
+    printf("Configuring Channel 0: RTD 1 on AIN1(+)/AIN2(-) - ENABLED\n");
     uint8_t ch0_data[2] = {0};
     uint16_t ch0_val = AD7124_CH_MAP_REG_CH_ENABLE |
                        AD7124_CH_MAP_REG_SETUP(0) |
-                       AD7124_CH_MAP_REG_AINP(config->rtd_ainp) |
-                       AD7124_CH_MAP_REG_AINM(config->rtd_ainm);
+                       AD7124_CH_MAP_REG_AINP(AD7124_AIN1) |
+                       AD7124_CH_MAP_REG_AINM(AD7124_AIN2);
     ch0_data[0] = (ch0_val >> 8) & 0xFF;
     ch0_data[1] = ch0_val & 0xFF;
     adc_reg_write(AD7124_CH0_MAP_REG, ch0_data, 2);
     printf("Channel 0 register written: 0x%04X\n", ch0_val);
+
+    // Channel 1: RTD 2 (AIN3/AIN4) - DISABLED initially
+    printf("Configuring Channel 1: RTD 2 on AIN3(+)/AIN4(-) - DISABLED\n");
+    uint8_t ch1_data[2] = {0};
+    uint16_t ch1_val = AD7124_CH_MAP_REG_SETUP(0) |  // No CH_ENABLE bit
+                       AD7124_CH_MAP_REG_AINP(AD7124_AIN3) |
+                       AD7124_CH_MAP_REG_AINM(AD7124_AIN4);
+    ch1_data[0] = (ch1_val >> 8) & 0xFF;
+    ch1_data[1] = ch1_val & 0xFF;
+    adc_reg_write(AD7124_CH0_MAP_REG + 1, ch1_data, 2);
+    printf("Channel 1 register written: 0x%04X\n", ch1_val);
+
+    // Channel 2: RTD 3 (AIN5/AIN6) - DISABLED initially
+    printf("Configuring Channel 2: RTD 3 on AIN5(+)/AIN6(-) - DISABLED\n");
+    uint8_t ch2_data[2] = {0};
+    uint16_t ch2_val = AD7124_CH_MAP_REG_SETUP(0) |  // No CH_ENABLE bit
+                       AD7124_CH_MAP_REG_AINP(AD7124_AIN5) |
+                       AD7124_CH_MAP_REG_AINM(AD7124_AIN6);
+    ch2_data[0] = (ch2_val >> 8) & 0xFF;
+    ch2_data[1] = ch2_val & 0xFF;
+    adc_reg_write(AD7124_CH0_MAP_REG + 2, ch2_data, 2);
+    printf("Channel 2 register written: 0x%04X\n", ch2_val);
 
     // Step 4: Configure Setup 0 for ratiometric measurement using REFIN1
     printf("Configuring Setup 0: REF=REFIN1, PGA=1, Buffers enabled (ratiometric)\n");
@@ -114,12 +138,12 @@ bool adc_configure_rtd(const rtd_config_t *config) {
     adc_reg_write(AD7124_FILTER0_REG, filt0_data, 3);
     printf("Filter 0 register written: 0x%06X\n", filt0_val);
 
-    // Step 5: Set to continuous conversion mode with external REFIN1 reference, low power mode
-    printf("Setting ADC Control: External ref (REFIN1), continuous mode, low power\n");
+    // Step 5: Set to standby mode (we'll use single conversion mode, triggered manually)
+    printf("Setting ADC Control: External ref (REFIN1), standby mode, low power\n");
     uint8_t adc_ctrl_data[2] = {0};
     uint16_t adc_ctrl_val = AD7124_ADC_CTRL_DATA_STATUS |               // Enable status with data
                             AD7124_ADC_CTRL_POWER_MODE(0) |             // Low power mode (0=low, 1=mid, 2=full)
-                            AD7124_ADC_CTRL_MODE(AD7124_MODE_CONTINUOUS) | // Continuous conversion mode
+                            AD7124_ADC_CTRL_MODE(AD7124_MODE_STANDBY) | // Standby mode (we'll trigger single conversions)
                             AD7124_ADC_CTRL_CLK_SEL(0);                 // Internal clock
     // Note: REF_EN=0 because we're using external reference on REFIN1
     adc_ctrl_data[0] = (adc_ctrl_val >> 8) & 0xFF;
@@ -185,8 +209,76 @@ bool adc_configure_rtd(const rtd_config_t *config) {
     return true;
 }
 
+void adc_enable_single_channel(uint8_t channel) {
+    // Enable only the specified channel (0, 1, or 2), disable all others
+    printf("Enabling only ADC channel %d...\n", channel);
+
+    // Channel 0: RTD 1 (AIN1/AIN2)
+    uint8_t ch0_data[2];
+    uint16_t ch0_val;
+    if (channel == 0) {
+        ch0_val = AD7124_CH_MAP_REG_CH_ENABLE |
+                  AD7124_CH_MAP_REG_SETUP(0) |
+                  AD7124_CH_MAP_REG_AINP(AD7124_AIN1) |
+                  AD7124_CH_MAP_REG_AINM(AD7124_AIN2);
+    } else {
+        ch0_val = AD7124_CH_MAP_REG_SETUP(0) |  // Disabled (no CH_ENABLE bit)
+                  AD7124_CH_MAP_REG_AINP(AD7124_AIN1) |
+                  AD7124_CH_MAP_REG_AINM(AD7124_AIN2);
+    }
+    ch0_data[0] = (ch0_val >> 8) & 0xFF;
+    ch0_data[1] = ch0_val & 0xFF;
+    adc_reg_write(AD7124_CH0_MAP_REG, ch0_data, 2);
+
+    // Channel 1: RTD 2 (AIN3/AIN4)
+    uint8_t ch1_data[2];
+    uint16_t ch1_val;
+    if (channel == 1) {
+        ch1_val = AD7124_CH_MAP_REG_CH_ENABLE |
+                  AD7124_CH_MAP_REG_SETUP(0) |
+                  AD7124_CH_MAP_REG_AINP(AD7124_AIN3) |
+                  AD7124_CH_MAP_REG_AINM(AD7124_AIN4);
+    } else {
+        ch1_val = AD7124_CH_MAP_REG_SETUP(0) |
+                  AD7124_CH_MAP_REG_AINP(AD7124_AIN3) |
+                  AD7124_CH_MAP_REG_AINM(AD7124_AIN4);
+    }
+    ch1_data[0] = (ch1_val >> 8) & 0xFF;
+    ch1_data[1] = ch1_val & 0xFF;
+    adc_reg_write(AD7124_CH0_MAP_REG + 1, ch1_data, 2);
+
+    // Channel 2: RTD 3 (AIN5/AIN6)
+    uint8_t ch2_data[2];
+    uint16_t ch2_val;
+    if (channel == 2) {
+        ch2_val = AD7124_CH_MAP_REG_CH_ENABLE |
+                  AD7124_CH_MAP_REG_SETUP(0) |
+                  AD7124_CH_MAP_REG_AINP(AD7124_AIN5) |
+                  AD7124_CH_MAP_REG_AINM(AD7124_AIN6);
+    } else {
+        ch2_val = AD7124_CH_MAP_REG_SETUP(0) |
+                  AD7124_CH_MAP_REG_AINP(AD7124_AIN5) |
+                  AD7124_CH_MAP_REG_AINM(AD7124_AIN6);
+    }
+    ch2_data[0] = (ch2_val >> 8) & 0xFF;
+    ch2_data[1] = ch2_val & 0xFF;
+    adc_reg_write(AD7124_CH0_MAP_REG + 2, ch2_data, 2);
+}
+
+void adc_start_single_conversion(void) {
+    // Start a single conversion by writing to ADC_CONTROL register
+    uint8_t adc_ctrl_data[2];
+    uint16_t adc_ctrl_val = AD7124_ADC_CTRL_DATA_STATUS |               // Enable status with data
+                            AD7124_ADC_CTRL_POWER_MODE(0) |             // Low power mode
+                            AD7124_ADC_CTRL_MODE(AD7124_MODE_SINGLE) |  // Single conversion mode
+                            AD7124_ADC_CTRL_CLK_SEL(0);                 // Internal clock
+    adc_ctrl_data[0] = (adc_ctrl_val >> 8) & 0xFF;
+    adc_ctrl_data[1] = adc_ctrl_val & 0xFF;
+    adc_reg_write(AD7124_ADC_CTRL_REG, adc_ctrl_data, 2);
+}
+
 bool adc_read_rtd_data(uint32_t *rtd_data, uint8_t *channel) {
-    // In continuous mode, just check if data is ready
+    // Check if data is ready
     uint8_t status;
     adc_reg_read(AD7124_STATUS_REG, &status, 1);
 
@@ -216,7 +308,7 @@ bool adc_read_rtd_data(uint32_t *rtd_data, uint8_t *channel) {
     return true;
 }
 
-float adc_calculate_temperature(uint32_t rtd_data, const rtd_config_t *config) {
+float adc_calculate_resistance(uint32_t rtd_data, const rtd_config_t *config) {
     // Convert 24-bit unsigned to voltage ratio (ratiometric measurement)
     float ratio = (float)rtd_data / 16777216.0f; // 2^24
 
@@ -224,6 +316,13 @@ float adc_calculate_temperature(uint32_t rtd_data, const rtd_config_t *config) {
     float r_rtd = config->r_ref * ratio;
 
     printf("RTD resistance calculated: %.2f ohms (ratio: %.6f)\n", r_rtd, ratio);
+
+    return r_rtd;
+}
+
+float adc_calculate_temperature(uint32_t rtd_data, const rtd_config_t *config) {
+    // Calculate resistance first
+    float r_rtd = adc_calculate_resistance(rtd_data, config);
 
     // Calculate temperature using simplified RTD equation: R(T) = R0(1 + α*T)
     // Therefore: T = (R(T)/R0 - 1) / α

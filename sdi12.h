@@ -11,17 +11,24 @@
 #define SDI12_MARKING_MS        8       // Marking period after break
 #define SDI12_RESPONSE_TIME_MS  15      // Maximum response time
 
+// SDI-12 Sensor Configuration
+typedef struct {
+    char address;                       // Sensor address (0-9, a-z, A-Z)
+    char sdi_version[3];                // SDI-12 version (e.g., "14")
+    char vendor_id[9];                  // Vendor identification (8 chars max)
+    char sensor_model[7];               // Sensor model (6 chars max)
+    char sensor_version[4];             // Sensor version (3 chars max)
+    char serial_number[14];             // Serial number (optional, 13 chars max)
+} sdi12_sensor_info_t;
+
 // SDI-12 Command Types
 typedef enum {
     SDI12_CMD_ACKNOWLEDGE,              // a! - Acknowledge active
     SDI12_CMD_IDENTIFY,                 // aI! - Send identification
     SDI12_CMD_ADDRESS_QUERY,            // ?! - Address query
     SDI12_CMD_CHANGE_ADDRESS,           // aAb! - Change address from a to b
-    SDI12_CMD_START_MEASUREMENT,        // aM! - Start measurement
-    SDI12_CMD_START_MEASUREMENT_CRC,    // aMC! - Start measurement with CRC
+    SDI12_CMD_START_MEASUREMENT,        // aM! or aMx! - Start measurement (x = 1-9)
     SDI12_CMD_SEND_DATA,                // aD0! - Send data
-    SDI12_CMD_CONTINUOUS_MEASUREMENT,   // aC! - Start concurrent measurement
-    SDI12_CMD_EXTENDED_COMMAND,         // aX... - Extended commands
     SDI12_CMD_UNKNOWN
 } sdi12_command_type_t;
 
@@ -31,17 +38,8 @@ typedef struct {
     sdi12_command_type_t type;          // Command type
     char parameter[16];                 // Additional parameters
     uint8_t data_index;                 // For aD commands (D0, D1, etc.)
+    uint8_t measurement_index;          // For aMx commands (M1, M2, M3, etc.)
 } sdi12_command_t;
-
-// SDI-12 Sensor Configuration
-typedef struct {
-    char address;                       // Sensor address
-    char sdi_version[3];                // SDI-12 version (e.g., "14")
-    char vendor_id[9];                  // Vendor identification (8 chars max)
-    char sensor_model[7];               // Sensor model (6 chars max)
-    char sensor_version[4];             // Sensor version (3 chars max)
-    char serial_number[14];             // Serial number (optional, 13 chars max)
-} sdi12_sensor_info_t;
 
 // SDI-12 Measurement Data
 typedef struct {
@@ -50,11 +48,13 @@ typedef struct {
     uint16_t time_seconds;              // Time until data ready (seconds)
 } sdi12_measurement_t;
 
-// Function declarations
+// Measurement callback function type
+// Called when measurement is requested, should return true if successful
+typedef bool (*sdi12_measurement_callback_t)(uint8_t measurement_index, sdi12_measurement_t *data);
 
 /**
  * Initialize SDI-12 interface
- * @param data_pin GPIO pin for SDI-12 data line
+ * @param data_pin GPIO pin for SDI-12 data line (pin 10)
  * @param sensor_info Pointer to sensor information structure
  * @return true if initialization successful
  */
@@ -81,22 +81,17 @@ bool sdi12_parse_command(const char *cmd_string, sdi12_command_t *cmd);
 void sdi12_send_response(const char *response);
 
 /**
- * Send break signal (wake up all sensors on bus)
- */
-void sdi12_send_break(void);
-
-/**
- * Set measurement callback function
- * @param callback Function to call when measurement is requested
- */
-void sdi12_set_measurement_callback(bool (*callback)(sdi12_measurement_t *data));
-
-/**
  * Format identification response
  * @param buffer Buffer to store response
  * @param sensor_info Sensor information
  */
 void sdi12_format_identification(char *buffer, const sdi12_sensor_info_t *sensor_info);
+
+/**
+ * Set measurement callback function
+ * @param callback Function to call when measurement is requested
+ */
+void sdi12_set_measurement_callback(sdi12_measurement_callback_t callback);
 
 /**
  * Format measurement response (aM! command)

@@ -16,6 +16,9 @@
                 "target/rp2040.cfg"
             ],
             "searchDir": [],
+            "openOCDPreConfigLaunchCommands": [
+                "set USE_CORE 0"
+            ],
             "openOCDLaunchCommands": [
                 "adapter speed 5000"
             ],

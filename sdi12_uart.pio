@@ -5,66 +5,46 @@
 .program sdi12_tx
 .side_set 1 opt
 
-; Transmit one byte (7 data bits + even parity + 1 stop bit)
-; Data in OSR, shifts out LSB first
-; Side-set pin is the SDI-12 data line
+; Transmit 8 bits (7 data + 1 parity) with start and stop bits
+; Based on standard UART TX, modified for SDI-12 inverted logic
+; Data is pre-inverted in software, so:
+; - Idle/stop = LOW (inverted from normal HIGH)
+; - Start bit = HIGH (inverted from normal LOW)
+; OUT pin 0 and side-set pin 0 are both mapped to the data pin
 
 .wrap_target
-    pull       side 1 [7]    ; Pull byte from TX FIFO, default high (marking)
-    set x, 6   side 0 [7]    ; Start bit (spacing/low), load bit counter (7 bits total)
-    set y, 0                 ; Initialize parity counter
+    pull       side 0 [7]   ; Assert stop bit or stall with line in idle state (LOW for SDI-12)
+    set x, 7   side 1 [7]   ; Preload bit counter, assert start bit (HIGH for SDI-12) for 8 clocks
 bitloop:
-    out pins, 1       [6]    ; Shift out data bit
-    mov osr, ::osr           ; Copy OSR bit 0 to ISR for parity calculation
-    jmp !osre skip           ; If bit was 0, skip parity increment
-    jmp x-- bitloop          ; Decrement counter and continue if more bits
-skip:
-    out null, 1              ; Consume the bit we just sent
-    jmp x-- bitloop   [6]    ; Loop for remaining bits
-    ; Calculate and send parity bit (even parity)
-    mov pins, y       [7]    ; Send parity bit
-    nop               side 1 [7]  ; Stop bit (marking/high)
+    out pins, 1             ; Shift 1 bit from OSR to the OUT pin (1 cycle)
+    jmp x-- bitloop   [6]   ; Each loop iteration is 8 cycles (1 + 6 + 1 for jmp)
 .wrap
+
 
 .program sdi12_rx
 ; Receive one byte (7 data bits + even parity + 1 stop bit)
-; Input on IN pin, pushes received byte to RX FIFO
+; SDI-12: 1200 baud, LSB first, even parity
+; Input on IN pin (with GPIO hardware inversion), pushes received byte to RX FIFO
+; GPIO inversion makes SDI-12's inverted logic appear as standard UART logic to PIO
 
 .wrap_target
 start:
-    wait 0 pin 0             ; Wait for start bit (spacing/low)
-    set x, 6         [7]     ; Load bit counter (7 data bits), delay to center of bit
-    set y, 0                 ; Initialize parity counter
+    wait 0 pin 0             ; Wait for start bit (LOW after GPIO inversion)
+    set x, 6         [10]    ; Load bit counter (7 data bits), delay to center of first bit (11 cycles total)
+
 bitloop:
-    in pins, 1       [6]     ; Sample data bit into ISR
-    jmp pin parity_inc       ; If bit is 1, increment parity
-    jmp x-- bitloop          ; Continue to next bit
-parity_inc:
-    jmp x-- bitloop          ; Continue to next bit (parity handled separately)
-    ; Receive parity bit
-    in pins, 1       [7]     ; Sample parity bit
-    ; Receive stop bit
-    wait 1 pin 0     [7]     ; Wait for stop bit (marking/high)
-    push                     ; Push received byte to FIFO
-.wrap
+    in pins, 1               ; Sample bit into ISR (1 cycle)
+    jmp x-- bitloop  [6]     ; Decrement and loop (1 + 6 = 7 cycles) = 8 cycles per bit total
 
-.program sdi12_break_detect
-; Detect SDI-12 break signal (12ms minimum spacing state)
-; Uses counter to measure pulse width
+    ; Sample parity bit (even parity)
+    in pins, 1       [6]     ; Sample parity bit (1 + 6 = 7 cycles)
 
-.wrap_target
-    wait 1 pin 0             ; Wait for spacing (high/5V) state
-    set x, 0                 ; Reset counter
-count_loop:
-    jmp pin continue         ; If still high, continue counting
-    jmp check_break          ; Pin went low, check if it was long enough
-continue:
-    jmp x-- count_loop [31]  ; Count with maximum delay
-    irq set 0                ; Signal break detected via IRQ
-    jmp start_over
-check_break:
-    ; Would need to check if x indicates >= 12ms
-    ; This is simplified - actual implementation needs clock divider tuning
-start_over:
-    wait 0 pin 0             ; Wait for low before starting over
+    jmp pin good_stop        ; Check stop bit (should be HIGH after inversion)
+
+    ; Framing error - wait for line to return to idle and don't push bad data
+    wait 1 pin 0             ; Wait for line to return to idle (HIGH)
+    jmp start                ; Restart without pushing
+
+good_stop:
+    push                     ; Push 8-bit result (7 data + 1 parity) to FIFO
 .wrap
