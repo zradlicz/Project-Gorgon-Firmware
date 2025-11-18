@@ -45,7 +45,7 @@ pico_set_program_version(sdi12-analog-mux "0.1")
 
 # Modify the below lines to enable/disable output over UART/USB
 pico_enable_stdio_uart(sdi12-analog-mux 1)
-pico_enable_stdio_usb(sdi12-analog-mux 1)
+pico_enable_stdio_usb(sdi12-analog-mux 0)
 
 # Add the standard library to the build
 target_link_libraries(sdi12-analog-mux
@@ -60,6 +60,7 @@ target_include_directories(sdi12-analog-mux PRIVATE
 target_link_libraries(sdi12-analog-mux
         hardware_spi
         hardware_pio
+        hardware_adc
         )
 
 pico_add_extra_outputs(sdi12-analog-mux)

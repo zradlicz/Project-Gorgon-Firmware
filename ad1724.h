@@ -66,6 +66,7 @@
 #define AD7124_AIN6     0x06
 #define AD7124_AIN7     0x07
 #define AD7124_AIN8     0x08
+#define AD7124_TEMP     0x10  // Internal temperature sensor
 #define AD7124_AVSS     0x11
 
 // Configuration register bits
@@ -146,5 +147,7 @@ void adc_start_single_conversion(void);
 bool adc_read_rtd_data(uint32_t *rtd_data, uint8_t *channel);
 float adc_calculate_temperature(uint32_t rtd_data, const rtd_config_t *config);
 float adc_calculate_resistance(uint32_t rtd_data, const rtd_config_t *config);
+float adc_read_internal_temperature(void);
+float pico_read_internal_temperature(void);
 
 #endif // AD7124_H

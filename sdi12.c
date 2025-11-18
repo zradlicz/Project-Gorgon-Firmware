@@ -352,8 +352,24 @@ static void sdi12_handle_command(const sdi12_command_t *cmd) {
             break;
 
         case SDI12_CMD_ACKNOWLEDGE:
+            // Acknowledge active: "a!" - Respond with address
+            printf("Acknowledge command received\n");
+            snprintf(response, sizeof(response), "%c\r\n", sdi12_state.sensor_info.address);
+            sdi12_send_response(response);
+            break;
+
         case SDI12_CMD_ADDRESS_QUERY:
+            // Address query: "?!" - Respond with address
+            printf("Address query received\n");
+            snprintf(response, sizeof(response), "%c\r\n", sdi12_state.sensor_info.address);
+            sdi12_send_response(response);
+            break;
+
         case SDI12_CMD_CHANGE_ADDRESS:
+            // Change address command - not implementing for safety
+            printf("Change address command not supported\n");
+            break;
+
         default:
             printf("Command not supported\n");
             break;

@@ -27,12 +27,12 @@ const uint PIN_SDI12_DATA = 10; // GPIO10 for SDI-12 data line (needs level shif
 static rtd_config_t global_rtd_config;
 static float last_temperature = 0.0f;
 
-// Multi-channel RTD storage (RTDs 1-3 only)
-#define NUM_RTDS 3
-// Auto-cycling through RTDs 1-3
+// Multi-channel RTD storage (RTDs 1-7)
+#define NUM_RTDS 7
+// Support for RTDs 1-7
 
-static float rtd_temperatures[NUM_RTDS] = {0.0f, 0.0f, 0.0f};
-static float rtd_resistances[NUM_RTDS] = {0.0f, 0.0f, 0.0f};
+static float rtd_temperatures[NUM_RTDS] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+static float rtd_resistances[NUM_RTDS] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
 
 // Perform LED initialisation
 int pico_led_init(void) {
@@ -61,20 +61,53 @@ void pico_set_led(bool led_on) {
 
 // SDI-12 measurement callback
 // Called when the SDI-12 master requests a measurement
-// measurement_index: 0 = aM!, 1 = aM1!, 2 = aM2!, 3 = aM3!
+// measurement_index: 0 = aM!, 1 = aM1!, 2 = aM2!, 3 = aM3!, 8 = aM8!, 9 = aM9!
 bool sdi12_measurement_callback(uint8_t measurement_index, sdi12_measurement_t *data) {
-    printf("SDI-12 measurement requested for RTD %d\n", measurement_index);
+    printf("SDI-12 measurement requested for index %d\n", measurement_index);
 
-    // Validate measurement index (1-3 for RTD1-RTD3)
+    // Handle temperature sensor commands
+    if (measurement_index == 8) {
+        // M8! - Raspberry Pi Pico internal temperature
+        printf("Reading Raspberry Pi Pico internal temperature\n");
+        float temperature = pico_read_internal_temperature();
+
+        if (temperature > -100.0f) {  // Valid temperature
+            data->values[0] = temperature;
+            data->num_values = 1;
+            data->time_seconds = 0;
+            printf("Pico Temperature: %.2f°C\n", temperature);
+            return true;
+        } else {
+            printf("ERROR: Failed to read Pico temperature\n");
+            return false;
+        }
+    } else if (measurement_index == 9) {
+        // M9! - AD7124 ADC internal temperature
+        printf("Reading AD7124 internal temperature\n");
+        float temperature = adc_read_internal_temperature();
+
+        if (temperature > -100.0f) {  // Valid temperature
+            data->values[0] = temperature;
+            data->num_values = 1;
+            data->time_seconds = 0;
+            printf("AD7124 Temperature: %.2f°C\n", temperature);
+            return true;
+        } else {
+            printf("ERROR: Failed to read AD7124 temperature\n");
+            return false;
+        }
+    }
+
+    // Validate measurement index (1-7 for RTD1-RTD7)
     if (measurement_index < 1 || measurement_index > NUM_RTDS) {
-        printf("Invalid measurement index: %d (valid: 1-3)\n", measurement_index);
+        printf("Invalid measurement index: %d (valid: 1-7, 8-9)\n", measurement_index);
         return false;
     }
 
     // Get RTD number (convert from 1-based to 0-based index)
     uint8_t rtd_num = measurement_index - 1;
-    uint8_t mux_channel = measurement_index; // Mux channels are 1-3
-    uint8_t adc_channel_num = rtd_num;       // ADC channels are 0-2
+    uint8_t mux_channel = measurement_index; // Mux channels are 1-7
+    uint8_t adc_channel_num = rtd_num;       // ADC channels are 0-6
 
     printf("Reading RTD %d (Mux Ch%d, ADC Ch%d)\n", measurement_index, mux_channel, adc_channel_num);
 
@@ -216,7 +249,7 @@ int main(){
     }
 
     printf("RTD configuration complete.\n");
-    printf("Will cycle through RTDs 1-3 using ADG708 mux\n");
+    printf("Will cycle through RTDs 1-7 using ADG708 mux and ADC channels\n");
 
     // Initialize SDI-12 sensor interface
     printf("\n=== Initializing SDI-12 Sensor ===\n");
@@ -250,6 +283,12 @@ int main(){
     printf("  0M1!   - Measure RTD1 temperature\n");
     printf("  0M2!   - Measure RTD2 temperature\n");
     printf("  0M3!   - Measure RTD3 temperature\n");
+    printf("  0M4!   - Measure RTD4 temperature\n");
+    printf("  0M5!   - Measure RTD5 temperature\n");
+    printf("  0M6!   - Measure RTD6 temperature\n");
+    printf("  0M7!   - Measure RTD7 temperature\n");
+    printf("  0M8!   - Measure Raspberry Pi Pico internal temperature\n");
+    printf("  0M9!   - Measure AD7124 ADC internal temperature\n");
     printf("  0D0!   - Get measurement data (after aM command)\n");
     printf("\n=== Main Loop: SDI-12 Command Processing ===\n");
     printf("RTD measurements are only taken when requested via SDI-12\n");
