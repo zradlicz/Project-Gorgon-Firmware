@@ -123,13 +123,43 @@ bool sdi12_measurement_callback(uint8_t measurement_index, sdi12_measurement_t *
     // Step 3: Wait for mux to settle and excitation current to stabilize
     sleep_ms(20);
 
-    // Step 4: Start a single conversion
+    // Step 4: Perform a DUMMY read to pre-charge input capacitors
+    // This prevents high resistance readings on first power-up
+    printf("Performing dummy read to charge input capacitors...\n");
     adc_start_single_conversion();
 
-    // Step 5: Wait for conversion to complete (poll RDY bit)
     uint8_t status;
     int timeout = 100;  // 100 attempts max
     bool conversion_ready = false;
+
+    while (timeout > 0) {
+        adc_reg_read(AD7124_STATUS_REG, &status, 1);
+        if ((status & 0x80) == 0) {  // RDY bit is low = data ready
+            conversion_ready = true;
+            break;
+        }
+        sleep_ms(10);
+        timeout--;
+    }
+
+    if (!conversion_ready) {
+        printf("ERROR: Dummy conversion timeout for RTD %d\n", measurement_index);
+        return false;
+    }
+
+    // Read and discard the dummy data
+    uint32_t dummy_data;
+    uint8_t dummy_channel;
+    if (adc_read_rtd_data(&dummy_data, &dummy_channel)) {
+        printf("Dummy read: 0x%06X (discarded)\n", dummy_data);
+    }
+
+    // Step 5: NOW start the actual conversion
+    adc_start_single_conversion();
+
+    // Step 6: Wait for actual conversion to complete (poll RDY bit)
+    timeout = 100;  // Reset timeout
+    conversion_ready = false;
 
     while (timeout > 0) {
         adc_reg_read(AD7124_STATUS_REG, &status, 1);
@@ -146,7 +176,7 @@ bool sdi12_measurement_callback(uint8_t measurement_index, sdi12_measurement_t *
         return false;
     }
 
-    // Step 6: Read the data
+    // Step 7: Read the actual data
     uint32_t rtd_data;
     uint8_t read_channel;
     if (adc_read_rtd_data(&rtd_data, &read_channel)) {
